@@ -1,176 +1,84 @@
 import Capacitor
-import UIKit
+import Foundation
+
+#if canImport(FoundationModels)
+import FoundationModels
+#endif
 
 @objc(FoundationModelsPlugin)
 public class FoundationModelsPlugin: CAPPlugin, CAPBridgedPlugin {
-    
-
+    // MARK: - CAPBridgedPlugin conformance
     public let identifier = "FoundationModelsPlugin"
     public let jsName = "FoundationModels"
     public let pluginMethods: [CAPPluginMethod] = [
-        CAPPluginMethod(name: "isAvailable", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "generateContent", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "generateContentStream", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "generateText", returnType: CAPPluginReturnPromise)
     ]
-    
-    public override init() {
-        super.init()
-        NSLog("🎯 FoundationModelsPlugin.init() called - PLUGIN INITIALIZING")
-        print("🎯 FoundationModelsPlugin.init() called - PLUGIN INITIALIZING")
-    }
-    
-    override public func load() {
-        super.load()
-        NSLog("🚀 FoundationModelsPlugin.load() called - PLUGIN LOADED SUCCESSFULLY")
-        NSLog("🔍 Plugin identifier: \(identifier)")
-        NSLog("🔍 Plugin jsName: \(jsName)")
-        NSLog("🔍 Plugin methods: \(pluginMethods.map { $0.name })")
-        print("🚀 FoundationModelsPlugin.load() called - PLUGIN LOADED SUCCESSFULLY")
-        print("🔍 Plugin identifier: \(identifier)")
-        print("🔍 Plugin jsName: \(jsName)")
-        print("🔍 Plugin methods: \(pluginMethods.map { $0.name })")
-    }
-    
-    @objc func isAvailable(_ call: CAPPluginCall) {
-        NSLog("🔍 isAvailable method called")
-        print("🔍 isAvailable method called")
-        
-        // Get current iOS version
-        let systemVersion = UIDevice.current.systemVersion
-        NSLog("📱 Current iOS version: \(systemVersion)")
-        print("📱 Current iOS version: \(systemVersion)")
-        
-        // For now, we'll make it available on iOS 15.0+ since iOS 26 doesn't exist yet
-        // In the future, this should be updated to the actual iOS version that supports Foundation Models
-        if #available(iOS 15.0, *) {
-            NSLog("✅ iOS 15.0+ detected - Foundation Models available (mock implementation)")
-            print("✅ iOS 15.0+ detected - Foundation Models available (mock implementation)")
-            call.resolve(["available": true, "version": systemVersion])
-        } else {
-            NSLog("❌ iOS version too old - requires 15.0+")
-            print("❌ iOS version too old - requires 15.0+")
-            call.resolve(["available": false, "reason": "iOS 15.0 or later required", "version": systemVersion])
-        }
-    }
-    
-    @objc func generateContent(_ call: CAPPluginCall) {
-        NSLog("🔄 generateContent method called")
-        print("🔄 generateContent method called")
-        
-        guard #available(iOS 15.0, *) else {
-            call.reject("Foundation Models requires iOS 15.0 or later")
+
+    // MARK: - Public API exposed to JavaScript
+    @objc func generateText(_ call: CAPPluginCall) {
+        guard let prompt = call.getString("prompt"), !prompt.isEmpty else {
+            call.reject("'prompt' must be a non-empty string.")
             return
         }
-        
-        guard let prompt = call.getString("prompt") else {
-            call.reject("Missing required parameter: prompt")
-            return
-        }
-        
-        // Mock response for now
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            call.resolve([
-                "text": "Mock response for: \(prompt)",
-                "finishReason": "completed"
-            ])
-        }
-    }
-    
-    @objc func generateContentStream(_ call: CAPPluginCall) {
-        NSLog("🌊 generateContentStream method called")
-        print("🌊 generateContentStream method called")
-        
-        guard #available(iOS 15.0, *) else {
-            call.reject("Foundation Models requires iOS 15.0 or later")
-            return
-        }
-        
-        guard let prompt = call.getString("prompt") else {
-            call.reject("Missing required parameter: prompt")
-            return
-        }
-        
-        // Mock streaming response
-        call.resolve(["success": true])
-    }
-}
 
-// MARK: - Supporting Types
-@available(iOS 15.0, *)
-struct FoundationModelRequest {
-    let prompt: String
-    let systemPrompt: String
-    let maxTokens: Int
-    let temperature: Float
-}
+        // Optional parameters
+        let maxTokens = call.getInt("maxTokens") ?? 256
+        let temperature = call.getFloat("temperature") ?? 0.7
 
-@available(iOS 15.0, *)
-struct FoundationModelResponse {
-    let text: String
-    let finishReason: String
-    let usage: TokenUsage
-}
+        // Perform the request asynchronously to avoid blocking the JS thread
+        Task {
+            // Ensure the device supports FoundationModels
+            guard #available(iOS 26, *), let LanguageModelSessionClass = _LanguageModelSessionProvider.shared else {
+                call.reject("On-device Foundation Models are only available on supported hardware running iOS 26 or later.")
+                return
+            }
 
-@available(iOS 15.0, *)
-struct FoundationModelStreamChunk {
-    let text: String
-    let isComplete: Bool
-}
-
-@available(iOS 15.0, *)
-struct TokenUsage {
-    let promptTokens: Int
-    let completionTokens: Int
-    let totalTokens: Int
-}
-
-// MARK: - Foundation Model Wrapper
-@available(iOS 15.0, *)
-class FoundationModel {
-    static let shared = FoundationModel()
-    
-    private init() {}
-    
-    func generateContent(request: FoundationModelRequest) async throws -> FoundationModelResponse {
-        // This is a placeholder implementation
-        // In the actual implementation, you would use Apple's Foundation Models API
-        // Since the exact API is not yet publicly documented, this serves as a structure
-        
-        // Simulate API call delay
-        try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
-        
-        // Mock response
-        return FoundationModelResponse(
-            text: "Generated response for: \(request.prompt)",
-            finishReason: "completed",
-            usage: TokenUsage(
-                promptTokens: request.prompt.count / 4, // Rough estimate
-                completionTokens: 50,
-                totalTokens: request.prompt.count / 4 + 50
-            )
-        )
-    }
-    
-    func generateContentStream(request: FoundationModelRequest) async throws -> AsyncStream<FoundationModelStreamChunk> {
-        return AsyncStream { continuation in
-            Task {
-                // Simulate streaming response
-                let words = "This is a simulated streaming response from Apple's on-device AI model.".split(separator: " ")
-                
-                for (index, word) in words.enumerated() {
-                    let chunk = FoundationModelStreamChunk(
-                        text: String(word) + " ",
-                        isComplete: index == words.count - 1
-                    )
-                    
-                    continuation.yield(chunk)
-                    
-                    // Simulate delay between chunks
-                    try? await Task.sleep(nanoseconds: 200_000_000) // 0.2 seconds
-                }
-                
-                continuation.finish()
+            do {
+                let text = try await LanguageModelSessionClass.generateText(prompt: prompt, maxTokens: maxTokens, temperature: temperature)
+                call.resolve(["text": text])
+            } catch {
+                call.reject("Generation failed: \(error.localizedDescription)")
             }
         }
     }
-} 
+}
+
+// MARK: - Session provider
+
+#if canImport(FoundationModels)
+import FoundationModels
+
+@available(iOS 26, *)
+fileprivate final class _LanguageModelSessionProvider {
+    static let shared: _LanguageModelSessionProvider = _LanguageModelSessionProvider()
+
+    private let session: LanguageModelSession
+
+    private init() {
+        self.session = LanguageModelSession()
+    }
+
+    /// Generate text using Apple Foundation Models. Currently uses the default generation parameters
+    /// supported by the public API. Advanced controls (maxTokens, temperature) will be added once the
+    /// framework exposes them.
+    func generateText(prompt: String, maxTokens: Int, temperature: Float) async throws -> String {
+        // NOTE: As of the initial FoundationModels release, `respond(to:)` does not yet expose
+        // configurable generation options. When the public API adds these knobs we can forward the
+        // arguments. For now we approximate temperature via prompt engineering is not implemented.
+        let response = try await session.respond(to: prompt)
+        return response.content
+    }
+}
+
+#else
+
+@available(iOS 26, *)
+fileprivate final class _LanguageModelSessionProvider {
+    static let shared: _LanguageModelSessionProvider? = nil
+
+    func generateText(prompt: String, maxTokens: Int, temperature: Float) async throws -> String {
+        throw NSError(domain: "FoundationModelsPlugin", code: -10, userInfo: [NSLocalizedDescriptionKey: "FoundationModels framework not available in this build configuration."])
+    }
+}
+
+#endif 

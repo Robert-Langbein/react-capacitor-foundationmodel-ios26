@@ -8,13 +8,13 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "sync": "npx cap sync",
-    "ios": "npm run build && npm run sync && npx cap run ios",
-    "android": "npm run build && npm run sync && npx cap run android",
-    "xcode": "npm run build && npm run sync && npx cap open ios",
-    "android-studio": "npm run build && npm run sync && npx cap open android",
+    "sync": "npm run build && npx cap sync",
+    "ios": "npm run sync && npx cap run ios",
+    "android": "npm run sync && npx cap run android",
+    "xcode": "npm run sync && npx cap open ios",
+    "android-studio": "npm run sync && npx cap open android",
     "assets": "npx @capacitor/assets generate --assetPath ./src/assets",
-    "build-ios": "npm run build && npm run sync && (cd ios/App &&fastlane beta)"
+    "build-ios": "npm run sync && (cd ios/App &&fastlane beta)"
   },
   "dependencies": {
     "@capacitor/core": "^7.3.0",

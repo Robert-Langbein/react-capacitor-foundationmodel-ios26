@@ -8,6 +8,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         // Override point for customization after application launch.
+        // Create a standard Capacitor bridge view controller and register the FoundationModels plugin.
+        let bridgeVC = CAPBridgeViewController()
+        window = UIWindow(frame: UIScreen.main.bounds)
+        window?.rootViewController = MyViewController()
+        window?.makeKeyAndVisible()
         return true
     }
 
