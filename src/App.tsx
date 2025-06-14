@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import './App.css';
+import './styles.css';
 import { 
   foundationModels, 
   FoundationModelsError, 
@@ -25,7 +25,7 @@ const App: React.FC = () => {
   const [availability, setAvailability] = useState<AvailabilityResult | null>(null);
   const [error, setError] = useState<ErrorState | null>(null);
   const [loading, setLoading] = useState<{ [key: string]: boolean }>({});
-  const [activeTab, setActiveTab] = useState<'basic' | 'conversation' | 'debug'>('basic');
+  const [activeView, setActiveView] = useState<'features' | 'conversation' | 'settings'>('features');
   
   // Input states
   const [prompt, setPrompt] = useState('');
@@ -170,11 +170,8 @@ const App: React.FC = () => {
       properties: {
         title: { type: "string" },
         content: { type: "string" },
-        genres: { type: "array", items: { type: "string" } },
-        confidence: { type: "number" },
-        cast: { type: "array", items: { type: "string" } },
-        regisseur: { type: "string" },
-        year: { type: "integer" }
+        tags: { type: "array", items: { type: "string" } },
+        confidence: { type: "number" }
       }
     };
     return foundationModels.generateWithSchema(prompt, schema);
@@ -271,7 +268,7 @@ const App: React.FC = () => {
       );
       setConversationSession(session);
       setConversationHistory([]);
-      setActiveTab('conversation');
+      setActiveView('conversation');
     } catch (error) {
       handleError(error, 'Conversation Start');
     } finally {
@@ -324,117 +321,405 @@ const App: React.FC = () => {
     }
   };
 
-  // Render functions
-  const renderAvailabilityStatus = () => {
+  // Status indicator component
+  const StatusIndicator = () => {
     if (!availability) return null;
 
-    const statusColors = {
-      available: '#4CAF50',
-      notEnabled: '#FF9800',
-      notEligible: '#F44336',
-      notReady: '#2196F3',
-      unavailable: '#9E9E9E',
-      notSupported: '#9E9E9E'
+    const statusConfig = {
+      available: { 
+        color: 'bg-emerald-500', 
+        icon: '✓', 
+        text: 'Ready',
+        gradient: 'from-emerald-400 to-emerald-600'
+      },
+      notEnabled: { 
+        color: 'bg-amber-500', 
+        icon: '⚠', 
+        text: 'Enable AI',
+        gradient: 'from-amber-400 to-amber-600'
+      },
+      notEligible: { 
+        color: 'bg-red-500', 
+        icon: '✗', 
+        text: 'Not Eligible',
+        gradient: 'from-red-400 to-red-600'
+      },
+      notReady: { 
+        color: 'bg-blue-500', 
+        icon: '⏳', 
+        text: 'Downloading',
+        gradient: 'from-blue-400 to-blue-600'
+      },
+      unavailable: { 
+        color: 'bg-gray-500', 
+        icon: '○', 
+        text: 'Unavailable',
+        gradient: 'from-gray-400 to-gray-600'
+      },
+      notSupported: { 
+        color: 'bg-gray-500', 
+        icon: '○', 
+        text: 'Not Supported',
+        gradient: 'from-gray-400 to-gray-600'
+      }
     };
 
+    const config = statusConfig[availability.status];
+
     return (
-      <div className="availability-status" style={{ 
-        backgroundColor: statusColors[availability.status],
-        color: 'white',
-        padding: '12px',
-        borderRadius: '8px',
-        marginBottom: '15px'
-      }}>
-        <h3>Status: {availability.status}</h3>
-        <p>{availability.reason}</p>
-        {availability.status === 'notEnabled' && (
-          <p><strong>→</strong> Enable Apple Intelligence in Settings</p>
-        )}
-        {availability.status === 'notReady' && (
-          <p><strong>→</strong> Wait for model download</p>
-        )}
+      <div className="glass-effect rounded-2xl p-4 mb-6 animate-slide-up">
+        <div className="flex items-center gap-3">
+          <div className={`w-3 h-3 rounded-full ${config.color} animate-pulse`}></div>
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">{config.icon}</span>
+              <span className="font-semibold text-white">{config.text}</span>
+            </div>
+            <p className="text-sm text-white/70 mt-1">{availability.reason}</p>
+          </div>
+        </div>
       </div>
     );
   };
 
-  const renderError = () => {
+  // Error display component
+  const ErrorDisplay = () => {
     if (!error) return null;
 
-    const errorColors = {
-      error: '#F44336',
-      warning: '#FF9800',
-      info: '#2196F3'
+    const errorConfig = {
+      error: { bg: 'from-red-500/20 to-red-600/20', border: 'border-red-500/30', icon: '⚠️' },
+      warning: { bg: 'from-amber-500/20 to-amber-600/20', border: 'border-amber-500/30', icon: '⚠️' },
+      info: { bg: 'from-blue-500/20 to-blue-600/20', border: 'border-blue-500/30', icon: 'ℹ️' }
     };
 
+    const config = errorConfig[error.type];
+
     return (
-      <div className="error-message" style={{
-        backgroundColor: errorColors[error.type],
-        color: 'white',
-        padding: '12px',
-        borderRadius: '8px',
-        marginBottom: '15px'
-      }}>
-        <div>
-          <strong>{error.type.toUpperCase()}:</strong> {error.message}
-          {error.code && <span> ({error.code})</span>}
+      <div className={`glass-effect bg-gradient-to-r ${config.bg} border ${config.border} rounded-2xl p-4 mb-6 animate-slide-up`}>
+        <div className="flex items-start gap-3">
+          <span className="text-xl">{config.icon}</span>
+          <div className="flex-1">
+            <p className="text-white font-medium">{error.message}</p>
+            {error.code && <p className="text-white/60 text-sm mt-1">Code: {error.code}</p>}
+          </div>
+          <button 
+            onClick={clearError}
+            className="text-white/60 hover:text-white transition-colors p-1"
+          >
+            ✕
+          </button>
         </div>
-        <button onClick={clearError} style={{
-          background: 'rgba(255,255,255,0.2)',
-          border: 'none',
-          color: 'white',
-          padding: '4px 8px',
-          borderRadius: '4px',
-          cursor: 'pointer'
-        }}>
-          ✕
-        </button>
       </div>
     );
   };
 
-  const renderTabNavigation = () => (
-    <div style={{
-      display: 'flex',
-      marginBottom: '15px',
-      background: 'white',
-      borderRadius: '8px',
-      padding: '4px',
-      boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-    }}>
-      {[
-        { key: 'basic', label: '🧪 Features' },
-        { key: 'conversation', label: '💬 Chat' },
-        { key: 'debug', label: '🔧 Debug' }
-      ].map(tab => (
-        <button
-          key={tab.key}
-          onClick={() => setActiveTab(tab.key as any)}
-          style={{
-            flex: 1,
-            padding: '10px',
-            border: 'none',
-            borderRadius: '6px',
-            background: activeTab === tab.key ? '#3498db' : 'transparent',
-            color: activeTab === tab.key ? 'white' : '#666',
-            fontWeight: activeTab === tab.key ? '600' : '400',
-            cursor: 'pointer',
-            fontSize: '14px'
-          }}
-        >
-          {tab.label}
-        </button>
-      ))}
+  // Navigation component
+  const Navigation = () => {
+    const navItems = [
+      { id: 'features', label: 'AI Features', icon: '🤖' },
+      { id: 'conversation', label: 'Chat', icon: '💬' },
+      { id: 'settings', label: 'Settings', icon: '⚙️' }
+    ];
+
+    return (
+      <div className="glass-effect rounded-2xl p-2 mb-6">
+        <div className="flex gap-1">
+          {navItems.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setActiveView(item.id as any)}
+              className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-medium transition-all duration-300 ${
+                activeView === item.id
+                  ? 'luxury-gradient text-white shadow-floating'
+                  : 'text-white/70 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              <span className="text-lg">{item.icon}</span>
+              <span className="hidden sm:inline">{item.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  // Input section component
+  const InputSection = () => (
+    <div className="glass-effect rounded-2xl p-6 mb-6 animate-slide-up">
+      <h3 className="text-xl font-bold text-white mb-4 text-shadow-luxury">Input</h3>
+      <div className="space-y-4">
+        <div>
+          <label className="block text-white/80 text-sm font-medium mb-2">Prompt</label>
+          <textarea
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="Enter your prompt here..."
+            className="w-full h-24 bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none backdrop-blur-sm"
+          />
+        </div>
+        {activeView === 'features' && (
+          <div>
+            <label className="block text-white/80 text-sm font-medium mb-2">Instructions (Optional)</label>
+            <textarea
+              value={instructions}
+              onChange={(e) => setInstructions(e.target.value)}
+              placeholder="Additional instructions..."
+              className="w-full h-20 bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none backdrop-blur-sm"
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 
-  const renderBasicFeatures = () => (
-    <>
-      {/* Global Controls */}
-      <section>
-        <h2>Settings</h2>
-        <div className="control-group">
-          <label>
-            Temperature: {temperature.toFixed(1)}
+  // Feature card component
+  const FeatureCard = ({ 
+    title, 
+    icon, 
+    description, 
+    onClick, 
+    loading: isLoading, 
+    result, 
+    disabled 
+  }: {
+    title: string;
+    icon: string;
+    description: string;
+    onClick: () => void;
+    loading: boolean;
+    result?: any;
+    disabled?: boolean;
+  }) => (
+    <div className="glass-effect rounded-2xl p-6 animate-slide-up hover:shadow-floating transition-all duration-300">
+      <div className="flex items-center gap-3 mb-4">
+        <span className="text-2xl">{icon}</span>
+        <h3 className="text-lg font-bold text-white text-shadow-luxury">{title}</h3>
+      </div>
+      <p className="text-white/70 text-sm mb-4">{description}</p>
+      <button
+        onClick={onClick}
+        disabled={isLoading || disabled}
+        className={`w-full py-3 px-4 rounded-xl font-semibold transition-all duration-300 ${
+          disabled
+            ? 'bg-gray-500/50 text-gray-300 cursor-not-allowed'
+            : isLoading
+            ? 'luxury-gradient text-white animate-pulse'
+            : 'luxury-gradient text-white hover:shadow-floating hover:scale-105 active:scale-95'
+        }`}
+      >
+        {isLoading ? 'Processing...' : 'Generate'}
+      </button>
+      {result && (
+        <div className="mt-4 p-4 bg-black/20 rounded-xl border border-white/10">
+          <h4 className="text-white font-medium mb-2">Result:</h4>
+          <div className="text-white/80 text-sm">
+            {typeof result === 'string' ? (
+              <p className="whitespace-pre-wrap">{result}</p>
+            ) : (
+              <pre className="overflow-x-auto text-xs">{JSON.stringify(result, null, 2)}</pre>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  // Features view
+  const FeaturesView = () => {
+    const features = [
+      {
+        title: 'Text Generation',
+        icon: '✨',
+        description: 'Generate creative and coherent text content',
+        key: 'text',
+        handler: handleGenerateText
+      },
+      {
+        title: 'Smart Summary',
+        icon: '📋',
+        description: 'Create intelligent summaries of your content',
+        key: 'summary',
+        handler: handleGenerateSummary
+      },
+      {
+        title: 'Echo Tool',
+        icon: '🔄',
+        description: 'Test the AI response system',
+        key: 'echo',
+        handler: handleEcho
+      },
+      {
+        title: 'Structured Output',
+        icon: '🏗️',
+        description: 'Generate content with specific schema',
+        key: 'schema',
+        handler: handleGenerateWithSchema
+      },
+      {
+        title: 'With Instructions',
+        icon: '📝',
+        description: 'Generate content following specific instructions',
+        key: 'instructions',
+        handler: handleGenerateWithInstructions
+      },
+      {
+        title: 'Live Streaming',
+        icon: '📡',
+        description: 'Real-time content generation',
+        key: 'streaming',
+        handler: handleGenerateStreaming
+      }
+    ];
+
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {features.map((feature) => (
+          <FeatureCard
+            key={feature.key}
+            title={feature.title}
+            icon={feature.icon}
+            description={feature.description}
+            onClick={feature.handler}
+            loading={loading[feature.key] || false}
+            result={results[feature.key]}
+            disabled={!availability?.available}
+          />
+        ))}
+        
+        {/* Special streaming card */}
+        {streamingState.content && (
+          <div className="md:col-span-2 lg:col-span-3 glass-effect rounded-2xl p-6 animate-slide-up">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-white text-shadow-luxury">🌊 Live Stream</h3>
+              {streamingState.isStreaming && (
+                <button
+                  onClick={stopStreaming}
+                  className="px-4 py-2 bg-red-500/80 hover:bg-red-500 text-white rounded-lg transition-colors"
+                >
+                  Stop
+                </button>
+              )}
+            </div>
+            <div 
+              ref={streamingContentRef}
+              className="max-h-64 overflow-y-auto p-4 bg-black/20 rounded-xl border border-white/10"
+            >
+              <div className="text-white/90 whitespace-pre-wrap font-mono text-sm">
+                {streamingState.content}
+                {streamingState.isStreaming && (
+                  <span className="inline-block w-2 h-5 bg-primary-400 ml-1 animate-pulse"></span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Conversation view
+  const ConversationView = () => (
+    <div className="space-y-6">
+      {!conversationSession ? (
+        <div className="glass-effect rounded-2xl p-8 text-center animate-slide-up">
+          <div className="text-6xl mb-4">💬</div>
+          <h3 className="text-2xl font-bold text-white mb-4 text-shadow-luxury">Start a Conversation</h3>
+          <p className="text-white/70 mb-6">Begin a multi-turn conversation with Apple Intelligence</p>
+          <button
+            onClick={startConversation}
+            disabled={loading.conversation || !availability?.available}
+            className={`px-8 py-4 rounded-xl font-semibold transition-all duration-300 ${
+              loading.conversation
+                ? 'luxury-gradient text-white animate-pulse'
+                : 'luxury-gradient text-white hover:shadow-floating hover:scale-105 active:scale-95'
+            }`}
+          >
+            {loading.conversation ? 'Starting...' : 'Start Conversation'}
+          </button>
+        </div>
+      ) : (
+        <>
+          {/* Session info */}
+          <div className="glass-effect rounded-2xl p-4 animate-slide-up">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
+                <span className="text-white font-medium">Active Session</span>
+                <span className="text-white/60 text-sm">
+                  {conversationSession.messageCount} messages
+                </span>
+              </div>
+              <button
+                onClick={endConversation}
+                className="px-4 py-2 bg-red-500/80 hover:bg-red-500 text-white rounded-lg transition-colors text-sm"
+              >
+                End
+              </button>
+            </div>
+          </div>
+
+          {/* Message input */}
+          <div className="glass-effect rounded-2xl p-4 animate-slide-up">
+            <button
+              onClick={sendMessage}
+              disabled={loading.message || !prompt.trim()}
+              className={`w-full py-4 rounded-xl font-semibold transition-all duration-300 ${
+                loading.message
+                  ? 'luxury-gradient text-white animate-pulse'
+                  : 'luxury-gradient text-white hover:shadow-floating hover:scale-105 active:scale-95'
+              }`}
+            >
+              {loading.message ? 'Sending...' : 'Send Message'}
+            </button>
+          </div>
+
+          {/* Conversation history */}
+          {conversationHistory.length > 0 && (
+            <div className="glass-effect rounded-2xl p-6 animate-slide-up">
+              <h3 className="text-lg font-bold text-white mb-4 text-shadow-luxury">Conversation</h3>
+              <div className="space-y-4 max-h-96 overflow-y-auto">
+                {conversationHistory.map((message, index) => (
+                  <div
+                    key={index}
+                    className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                  >
+                    <div
+                      className={`max-w-[80%] p-4 rounded-2xl ${
+                        message.role === 'user'
+                          ? 'luxury-gradient text-white'
+                          : 'bg-white/10 text-white border border-white/20'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-sm font-medium">
+                          {message.role === 'user' ? 'You' : 'AI'}
+                        </span>
+                        <span className="text-xs opacity-60">
+                          {message.timestamp.toLocaleTimeString()}
+                        </span>
+                      </div>
+                      <p className="whitespace-pre-wrap">{message.content}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+
+  // Settings view
+  const SettingsView = () => (
+    <div className="space-y-6">
+      <div className="glass-effect rounded-2xl p-6 animate-slide-up">
+        <h3 className="text-xl font-bold text-white mb-6 text-shadow-luxury">AI Parameters</h3>
+        <div className="space-y-6">
+          <div>
+            <label className="block text-white/80 text-sm font-medium mb-3">
+              Temperature: {temperature.toFixed(1)}
+            </label>
             <input
               type="range"
               min="0"
@@ -442,10 +727,18 @@ const App: React.FC = () => {
               step="0.1"
               value={temperature}
               onChange={(e) => setTemperature(parseFloat(e.target.value))}
+              className="w-full h-2 bg-white/20 rounded-lg appearance-none cursor-pointer slider"
             />
-          </label>
-          <label>
-            Max Tokens: {maxTokens}
+            <div className="flex justify-between text-xs text-white/60 mt-1">
+              <span>Conservative</span>
+              <span>Creative</span>
+            </div>
+          </div>
+          
+          <div>
+            <label className="block text-white/80 text-sm font-medium mb-3">
+              Max Tokens: {maxTokens}
+            </label>
             <input
               type="range"
               min="100"
@@ -453,238 +746,77 @@ const App: React.FC = () => {
               step="100"
               value={maxTokens}
               onChange={(e) => setMaxTokens(parseInt(e.target.value))}
+              className="w-full h-2 bg-white/20 rounded-lg appearance-none cursor-pointer slider"
             />
-          </label>
-        </div>
-      </section>
-
-      {/* Input Section */}
-      <section>
-        <h2>Input</h2>
-        <textarea
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          placeholder="Enter your prompt here..."
-          rows={3}
-        />
-        <textarea
-          value={instructions}
-          onChange={(e) => setInstructions(e.target.value)}
-          placeholder="Instructions (optional)..."
-          rows={2}
-          style={{ marginTop: '10px' }}
-        />
-      </section>
-
-      {/* Features */}
-      <section>
-        <h2>AI Features</h2>
-        <div className="feature-grid">
-          
-          {/* Text Generation */}
-          <div className="feature-card">
-            <h3>📝 Text Generation</h3>
-            <button 
-              onClick={handleGenerateText}
-              disabled={loading.text || !availability?.available}
-            >
-              {loading.text ? 'Generating...' : 'Generate Text'}
-            </button>
-            {results.text && (
-              <div className="result">
-                <h4>Result:</h4>
-                <p>{results.text}</p>
-              </div>
-            )}
-          </div>
-
-          {/* Summary */}
-          <div className="feature-card">
-            <h3>📋 Summary</h3>
-            <button 
-              onClick={handleGenerateSummary}
-              disabled={loading.summary || !availability?.available}
-            >
-              {loading.summary ? 'Summarizing...' : 'Summarize'}
-            </button>
-            {results.summary && (
-              <div className="result">
-                <h4>Summary:</h4>
-                <pre>{JSON.stringify(results.summary, null, 2)}</pre>
-              </div>
-            )}
-          </div>
-
-          {/* Echo Tool */}
-          <div className="feature-card">
-            <h3>🔄 Echo Tool</h3>
-            <button 
-              onClick={handleEcho}
-              disabled={loading.echo || !availability?.available}
-            >
-              {loading.echo ? 'Echoing...' : 'Echo'}
-            </button>
-            {results.echo && (
-              <div className="result">
-                <h4>Echo:</h4>
-                <p>{results.echo}</p>
-              </div>
-            )}
-          </div>
-
-          {/* Schema Generation */}
-          <div className="feature-card">
-            <h3>🏗️ Structured Output</h3>
-            <button 
-              onClick={handleGenerateWithSchema}
-              disabled={loading.schema || !availability?.available}
-            >
-              {loading.schema ? 'Generating...' : 'Generate Schema'}
-            </button>
-            {results.schema && (
-              <div className="result">
-                <h4>Structured:</h4>
-                <pre>{JSON.stringify(results.schema, null, 2)}</pre>
-              </div>
-            )}
-          </div>
-
-          {/* Instructions */}
-          <div className="feature-card">
-            <h3>📋 With Instructions</h3>
-            <button 
-              onClick={handleGenerateWithInstructions}
-              disabled={loading.instructions || !availability?.available}
-            >
-              {loading.instructions ? 'Generating...' : 'Use Instructions'}
-            </button>
-            {results.instructions && (
-              <div className="result">
-                <h4>Result:</h4>
-                <p>{results.instructions}</p>
-              </div>
-            )}
-          </div>
-
-          {/* Streaming */}
-          <div className="feature-card">
-            <h3>📡 Streaming</h3>
-            <div className="streaming-controls">
-              <button 
-                onClick={handleGenerateStreaming}
-                disabled={streamingState.isStreaming || !availability?.available}
-              >
-                {streamingState.isStreaming ? 'Streaming...' : 'Start Stream'}
-              </button>
-              {streamingState.isStreaming && (
-                <button onClick={stopStreaming}>Stop</button>
-              )}
+            <div className="flex justify-between text-xs text-white/60 mt-1">
+              <span>Short</span>
+              <span>Long</span>
             </div>
-            {streamingState.content && (
-              <div className="result streaming-result" ref={streamingContentRef}>
-                <h4>Stream:</h4>
-                <div className="streaming-content">
-                  {streamingState.content}
-                  {streamingState.isStreaming && <span className="cursor">|</span>}
-                </div>
-              </div>
-            )}
           </div>
         </div>
-      </section>
-    </>
-  );
+      </div>
 
-  const renderConversation = () => (
-    <section>
-      <h2>💬 Conversation</h2>
-      
-      {!conversationSession ? (
-        <div>
-          <p>Start a multi-turn conversation with the AI.</p>
-          <button 
-            onClick={startConversation}
-            disabled={loading.conversation || !availability?.available}
-            style={{ width: '100%', padding: '14px', fontSize: '16px' }}
+      <div className="glass-effect rounded-2xl p-6 animate-slide-up">
+        <h3 className="text-xl font-bold text-white mb-4 text-shadow-luxury">System Status</h3>
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <span className="text-white/80">Active Sessions</span>
+            <span className="text-white font-mono">
+              {foundationModels.getActiveSessionIds().length}
+            </span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-white/80">Cached Results</span>
+            <span className="text-white font-mono">
+              {Object.keys(results).length}
+            </span>
+          </div>
+          <button
+            onClick={checkAvailability}
+            className="w-full py-3 px-4 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-colors border border-white/20"
           >
-            {loading.conversation ? 'Starting...' : 'Start Conversation'}
+            Refresh Status
           </button>
         </div>
-      ) : (
-        <div className="active-conversation">
-          <div className="conversation-info">
-            <span>Session: {conversationSession.sessionId.slice(0, 8)}...</span>
-            <span>Messages: {conversationSession.messageCount}</span>
-            <button onClick={endConversation}>End</button>
-          </div>
-          
-          <div className="message-controls">
-            <button 
-              onClick={sendMessage}
-              disabled={loading.message || !prompt.trim()}
-            >
-              {loading.message ? 'Sending...' : 'Send Message'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {conversationHistory.length > 0 && (
-        <div className="conversation-history">
-          <h4>History:</h4>
-          <div className="messages">
-            {conversationHistory.map((message, index) => (
-              <div 
-                key={index} 
-                className={`message ${message.role}`}
-              >
-                <div className="message-header">
-                  <strong>{message.role === 'user' ? 'You' : 'AI'}</strong>
-                  <span>{message.timestamp.toLocaleTimeString()}</span>
-                </div>
-                <div className="message-content">{message.content}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </section>
-  );
-
-  const renderDebug = () => (
-    <section className="debug-section">
-      <h2>🔧 Debug Info</h2>
-      <div className="debug-info">
-        <h4>Availability:</h4>
-        <pre>{JSON.stringify(availability, null, 2)}</pre>
-        
-        <h4>Active Sessions:</h4>
-        <p>{foundationModels.getActiveSessionIds().join(', ') || 'None'}</p>
-        
-        <h4>Results Cache:</h4>
-        <pre>{JSON.stringify(Object.keys(results), null, 2)}</pre>
-        
-        <button onClick={checkAvailability}>Refresh Status</button>
       </div>
-    </section>
+    </div>
   );
 
   return (
-    <div className="App">
-      <header className="App-header">
-        <h1>🤖 Foundation Models</h1>
-        <p>Apple AI on your device</p>
-      </header>
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-4 font-body">
+      <div className="max-w-6xl mx-auto">
+        {/* Header */}
+        <header className="text-center mb-8 animate-fade-in">
+          <div className="inline-flex items-center gap-3 mb-4">
+            <div className="w-12 h-12 luxury-gradient rounded-2xl flex items-center justify-center animate-float">
+              <span className="text-2xl">🤖</span>
+            </div>
+            <h1 className="text-4xl md:text-5xl font-bold text-white text-shadow-luxury font-display">
+              Foundation Models
+            </h1>
+          </div>
+          <p className="text-white/70 text-lg">
+            Apple Intelligence on your device
+          </p>
+        </header>
 
-      <main className="App-main">
-        {renderAvailabilityStatus()}
-        {renderError()}
-        {renderTabNavigation()}
+        {/* Status and Error Display */}
+        <StatusIndicator />
+        <ErrorDisplay />
 
-        {activeTab === 'basic' && renderBasicFeatures()}
-        {activeTab === 'conversation' && renderConversation()}
-        {activeTab === 'debug' && renderDebug()}
-      </main>
+        {/* Navigation */}
+        <Navigation />
+
+        {/* Input Section */}
+        <InputSection />
+
+        {/* Main Content */}
+        <main>
+          {activeView === 'features' && <FeaturesView />}
+          {activeView === 'conversation' && <ConversationView />}
+          {activeView === 'settings' && <SettingsView />}
+        </main>
+      </div>
     </div>
   );
 };
