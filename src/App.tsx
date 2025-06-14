@@ -170,8 +170,11 @@ const App: React.FC = () => {
       properties: {
         title: { type: "string" },
         content: { type: "string" },
-        tags: { type: "array", items: { type: "string" } },
-        confidence: { type: "number" }
+        genres: { type: "array", items: { type: "string" } },
+        confidence: { type: "number" },
+        cast: { type: "array", items: { type: "string" } },
+        regisseur: { type: "string" },
+        year: { type: "integer" }
       }
     };
     return foundationModels.generateWithSchema(prompt, schema);
