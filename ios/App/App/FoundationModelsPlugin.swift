@@ -153,11 +153,11 @@ public class FoundationModelsPlugin: CAPPlugin, CAPBridgedPlugin {
             }
 
             do {
-                let streamId = try await provider.generateStreaming(prompt: prompt) { [weak self] chunk in
-                    // Send streaming updates back to JavaScript
+                let streamId = try await provider.generateStreaming(prompt: prompt) { [weak self] chunk, callId in
+                    // Send streaming updates back to JavaScript using the provided callId
                     self?.notifyListeners("streamingUpdate", data: [
                         "chunk": chunk,
-                        "callId": call.callbackId
+                        "callId": callId
                     ])
                 }
                 call.resolve(["streamId": streamId])
@@ -405,31 +405,42 @@ fileprivate final class _LanguageModelSessionProvider {
     }
 
     // MARK: - Streaming generation
-    func generateStreaming(prompt: String, onChunk: @escaping (String) -> Void) async throws -> String {
+    func generateStreaming(prompt: String, onChunk: @escaping (String, String) -> Void) async throws -> String {
         let session = LanguageModelSession()
         let streamId = UUID().uuidString
         
         let task = Task {
             do {
-                // For streaming, we need to use a different approach since not all responses support AsyncSequence
-                // We'll simulate streaming by generating the full response and then "streaming" it
-                let response = try await session.respond(to: prompt, generating: SummaryResult.self)
-                let fullContent = String(describing: response.content)
+                // Generate response normally first
+                let response = try await session.respond(to: prompt)
+                let fullContent = response.content
                 
-                // Simulate streaming by sending chunks
-                let chunkSize = 10
-                for i in stride(from: 0, to: fullContent.count, by: chunkSize) {
-                    let startIndex = fullContent.index(fullContent.startIndex, offsetBy: i)
-                    let endIndex = fullContent.index(startIndex, offsetBy: min(chunkSize, fullContent.count - i))
-                    let chunk = String(fullContent[startIndex..<endIndex])
+                // Simulate streaming by sending chunks with realistic timing
+                let words = fullContent.components(separatedBy: " ")
+                var currentChunk = ""
+                
+                for (index, word) in words.enumerated() {
+                    currentChunk += word
                     
-                    onChunk(chunk)
-                    
-                    // Small delay to simulate streaming
-                    try await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+                    // Send chunk every 2-3 words or at the end
+                    if index % 2 == 1 || index == words.count - 1 {
+                        onChunk(currentChunk + " ", streamId)
+                        currentChunk = ""
+                        
+                        // Realistic delay between chunks (50-150ms)
+                        let delay = UInt64.random(in: 50_000_000...150_000_000)
+                        try await Task.sleep(nanoseconds: delay)
+                    } else {
+                        currentChunk += " "
+                    }
                 }
+                
+                // Send final completion signal
+                onChunk("[STREAM_COMPLETE]", streamId)
+                
             } catch {
-                onChunk("Error: \(error.localizedDescription)")
+                onChunk("Error: \(error.localizedDescription)", streamId)
+                onChunk("[STREAM_ERROR]", streamId)
             }
         }
         

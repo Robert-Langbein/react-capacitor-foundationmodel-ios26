@@ -119,9 +119,12 @@ export class FoundationModelsService {
   private constructor() {
     // Listen for streaming updates
     FoundationModels.addListener('streamingUpdate', (data: StreamingChunk) => {
+      console.log('Received streaming chunk:', data);
       const listener = this.streamingListeners.get(data.callId);
       if (listener) {
         listener(data);
+      } else {
+        console.warn('No listener found for callId:', data.callId);
       }
     });
   }
@@ -249,11 +252,31 @@ export class FoundationModelsService {
     await this.ensureAvailable();
 
     try {
+      console.log('Starting streaming for prompt:', prompt);
       const result = await FoundationModels.generateStreaming({ prompt });
       const streamId = result.streamId;
+      console.log('Got streamId:', streamId);
 
       // Set up listener for this stream
       this.streamingListeners.set(streamId, (data: StreamingChunk) => {
+        console.log('Processing chunk:', data.chunk);
+        
+        // Handle completion signals
+        if (data.chunk === '[STREAM_COMPLETE]') {
+          console.log('Stream completed');
+          this.streamingListeners.delete(streamId);
+          onChunk('[STREAM_COMPLETE]'); // Notify the UI
+          return;
+        }
+        
+        if (data.chunk === '[STREAM_ERROR]') {
+          console.log('Stream error');
+          this.streamingListeners.delete(streamId);
+          onChunk('[STREAM_ERROR]'); // Notify the UI
+          return;
+        }
+        
+        // Send chunk to callback
         onChunk(data.chunk);
       });
 

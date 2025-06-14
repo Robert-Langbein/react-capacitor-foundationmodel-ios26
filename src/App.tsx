@@ -193,26 +193,68 @@ const App: React.FC = () => {
       return;
     }
 
-    setStreamingState({ isStreaming: true, content: '' });
+    setStreamingState({ isStreaming: true, content: '', streamId: undefined });
     clearError();
     
     try {
+      console.log('Starting streaming in React...');
       const streamId = await foundationModels.generateStreaming(prompt, (chunk) => {
+        console.log('React received chunk:', chunk);
+        
+        // Handle completion signals
+        if (chunk === '[STREAM_COMPLETE]') {
+          console.log('Stream completed in React');
+          setStreamingState(prev => ({ ...prev, isStreaming: false }));
+          return;
+        }
+        
+        if (chunk === '[STREAM_ERROR]') {
+          console.log('Stream error in React');
+          setStreamingState(prev => ({ ...prev, isStreaming: false }));
+          setError({ message: 'Streaming encountered an error', type: 'error' });
+          return;
+        }
+        
+        // Add normal chunks to content
         setStreamingState(prev => ({
           ...prev,
           content: prev.content + chunk
         }));
       });
       
+      console.log('React got streamId:', streamId);
       setStreamingState(prev => ({ ...prev, streamId }));
+      
+      // Auto-stop streaming after a reasonable timeout (30 seconds)
+      setTimeout(() => {
+        setStreamingState(prev => {
+          if (prev.isStreaming) {
+            console.log('Auto-stopping streaming due to timeout');
+            return { ...prev, isStreaming: false };
+          }
+          return prev;
+        });
+      }, 30000);
+      
     } catch (error) {
+      console.error('Streaming error in React:', error);
       handleError(error, 'Streaming Generation');
       setStreamingState({ isStreaming: false, content: '' });
     }
   };
 
   const stopStreaming = () => {
-    setStreamingState({ isStreaming: false, content: '' });
+    console.log('Manually stopping streaming');
+    setStreamingState(prev => ({ 
+      ...prev, 
+      isStreaming: false 
+    }));
+    
+    // Clean up any listeners if we have a streamId
+    if (streamingState.streamId) {
+      // The service will clean up listeners automatically on completion signals
+      console.log('Stopped streaming for streamId:', streamingState.streamId);
+    }
   };
 
   // Conversation functions
