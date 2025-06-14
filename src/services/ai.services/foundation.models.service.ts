@@ -22,6 +22,9 @@ export interface FoundationModelsPlugin {
 
   /** Tool calling echo */
   echo(options: { message: string }): Promise<{ reply: string }>;
+
+  /** Dynamic schema generation */
+  generateDynamic(options: { prompt: string; schema: string }): Promise<{ json: string }>;
 }
 
 /**

@@ -7,7 +7,21 @@ function App() {
   const [response, setResponse] = useState<string | null>(null)
   const [summaryJson, setSummaryJson] = useState<string | null>(null)
   const [echoReply, setEchoReply] = useState<string | null>(null)
+  const [dynamicJson, setDynamicJson] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+
+  const schemaExample = JSON.stringify(
+    {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'Titel' },
+        tags: { type: 'array', items: { type: 'string' } }
+      },
+      required: ['title', 'tags']
+    },
+    null,
+    2
+  )
 
   const handleGenerate = async () => {
     setIsLoading(true)
@@ -49,6 +63,19 @@ function App() {
     }
   }
 
+  const handleDynamic = async () => {
+    setIsLoading(true)
+    setDynamicJson(null)
+    try {
+      const { json } = await FoundationModels.generateDynamic({ prompt, schema: schemaExample })
+      setDynamicJson(json)
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   return (
     <div className="test-container">
       <h1>On-Device AI Test</h1>
@@ -75,6 +102,12 @@ function App() {
       </button>
       {echoReply && (
         <pre style={{ whiteSpace: 'pre-wrap', marginTop: 16 }}>{echoReply}</pre>
+      )}
+      <button onClick={handleDynamic} disabled={isLoading} style={{ marginTop: 8 }}>
+        {isLoading ? 'Dynamic …' : 'Dynamic Schema'}
+      </button>
+      {dynamicJson && (
+        <pre style={{ whiteSpace: 'pre-wrap', marginTop: 16 }}>{dynamicJson}</pre>
       )}
     </div>
   )

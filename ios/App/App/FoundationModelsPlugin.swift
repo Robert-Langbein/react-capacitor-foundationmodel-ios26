@@ -13,7 +13,8 @@ public class FoundationModelsPlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "generateText", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "generateSummary", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "echo", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "echo", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "generateDynamic", returnType: CAPPluginReturnPromise)
     ]
 
     // MARK: - Public API exposed to JavaScript
@@ -85,6 +86,29 @@ public class FoundationModelsPlugin: CAPPlugin, CAPBridgedPlugin {
             }
         }
     }
+
+    // MARK: Dynamic generation with JSON schema
+    @objc func generateDynamic(_ call: CAPPluginCall) {
+        guard let prompt = call.getString("prompt"),
+              let schemaString = call.getString("schema") else {
+            call.reject("'prompt' und 'schema' erforderlich")
+            return
+        }
+
+        Task {
+            guard #available(iOS 26, *), let provider = _LanguageModelSessionProvider.shared else {
+                call.reject("Foundation Models nicht verfügbar")
+                return
+            }
+
+            do {
+                let json = try await provider.generateWithDynamicSchema(prompt: prompt, schemaString: schemaString)
+                call.resolve(["json": json])
+            } catch {
+                call.reject(error.localizedDescription)
+            }
+        }
+    }
 }
 
 // MARK: - Session provider
@@ -140,6 +164,24 @@ fileprivate final class _LanguageModelSessionProvider {
         let prompt = "Use the echoTool to repeat the following message: \"\(message)\""
         let response = try await toolSession.respond(to: prompt)
         return response.content
+    }
+
+    func generateWithDynamicSchema(prompt: String, schemaString: String) async throws -> String {
+        /*
+         Dynamic generation with arbitrary JSON Schema is only supported starting with
+         later Xcode beta seeds. The current SDK we are building against does *not*
+         expose a public `GenerationSchema(jsonSchema:)` initializer (or any other
+         runtime JSON Schema bridge). Instead of failing at compile-time, we gracefully
+         reject the call at runtime so that older toolchains can still build the
+         application. Once the required initializer ships, this guard can be removed
+         and the previously attempted implementation restored.
+        */
+
+        throw NSError(
+            domain: "FoundationModelsPlugin",
+            code: -12,
+            userInfo: [NSLocalizedDescriptionKey: "Dynamic schemas via JSON string are not supported on this OS / Xcode version."]
+        )
     }
 }
 #else
