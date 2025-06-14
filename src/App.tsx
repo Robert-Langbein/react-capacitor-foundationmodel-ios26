@@ -262,8 +262,16 @@ const App: React.FC = () => {
       type: "object",
       properties: {
         title: { type: "string" },
-        content: { type: "string" },
-        tags: { type: "array", items: { type: "string" } },
+        description: { type: "string" },
+        genres: { type: "array", items: { type: "string" } },
+        year: { type: "number" },
+        cast: { type: "array", items: { type: "string" } },
+        director: { type: "string" },
+        rating: { type: "number" },
+        duration: { type: "number" },
+        language: { type: "string" },
+        country: { type: "string" },
+        releaseDate: { type: "string" },
         confidence: { type: "number" }
       }
     };
@@ -275,8 +283,16 @@ const App: React.FC = () => {
       type: "object",
       properties: {
         title: { type: "string" },
-        content: { type: "string" },
-        tags: { type: "array", items: { type: "string" } },
+        description: { type: "string" },
+        genres: { type: "array", items: { type: "string" } },
+        year: { type: "number" },
+        cast: { type: "array", items: { type: "string" } },
+        director: { type: "string" },
+        rating: { type: "number" },
+        duration: { type: "number" },
+        language: { type: "string" },
+        country: { type: "string" },
+        releaseDate: { type: "string" },
         confidence: { type: "number" }
       }
     };
