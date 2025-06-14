@@ -18,6 +18,12 @@ Apple Foundation Models represent Apple's approach to on-device AI processing, p
 - **Availability Detection**: Smart availability checking and fallback strategies
 - **Performance optimization**: Prewarming and efficient resource management
 
+## ☕ Support This Project
+
+If this project has been helpful to you, consider buying me a coffee! Your support helps maintain and improve this reference implementation.
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Donate-orange?style=for-the-badge&logo=buy-me-a-coffee)](https://www.paypal.com/paypalme/RLangbein/5)
+
 ## 🚀 Quick Start
 
 ### Prerequisites
