@@ -167,21 +167,71 @@ fileprivate final class _LanguageModelSessionProvider {
     }
 
     func generateWithDynamicSchema(prompt: String, schemaString: String) async throws -> String {
+        // Try to build a GenerationSchema from a subset of JSON Schema ourselves.
+        // Currently supports: type="object" with `properties` where each property
+        // can be a `string`, `number`, `integer`, `boolean`, or an `array` of one of
+        // those primitive types.
+
+        func primitiveSchema(for jsonType: String) throws -> DynamicGenerationSchema {
+            switch jsonType {
+            case "string": return DynamicGenerationSchema(type: String.self)
+            case "number": return DynamicGenerationSchema(type: Double.self)
+            case "integer": return DynamicGenerationSchema(type: Int.self)
+            case "boolean": return DynamicGenerationSchema(type: Bool.self)
+            default:
+                throw NSError(domain: "FoundationModelsPlugin", code: -13, userInfo: [NSLocalizedDescriptionKey: "Unsupported JSON Schema primitive type: \(jsonType)"])
+            }
+        }
+
+        // Parse JSON
+        guard let data = schemaString.data(using: .utf8),
+              let top = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw NSError(domain: "FoundationModelsPlugin", code: -14, userInfo: [NSLocalizedDescriptionKey: "Invalid JSON schema"])
+        }
+
+        guard (top["type"] as? String) == "object",
+              let props = top["properties"] as? [String: Any] else {
+            throw NSError(domain: "FoundationModelsPlugin", code: -15, userInfo: [NSLocalizedDescriptionKey: "Only object schemas with properties are supported in this preview implementation."])
+        }
+
+        var propertySchemas: [DynamicGenerationSchema.Property] = []
+
+        for (propName, specAny) in props {
+            guard let spec = specAny as? [String: Any], let typeString = spec["type"] as? String else {
+                continue // skip malformed property
+            }
+
+            let schema: DynamicGenerationSchema
+            if typeString == "array", let items = spec["items"] as? [String: Any], let itemType = items["type"] as? String {
+                schema = DynamicGenerationSchema(arrayOf: try primitiveSchema(for: itemType))
+            } else {
+                schema = try primitiveSchema(for: typeString)
+            }
+
+            let property = DynamicGenerationSchema.Property(name: propName, schema: schema)
+            propertySchemas.append(property)
+        }
+
+        let root = DynamicGenerationSchema(name: "Root", properties: propertySchemas)
+        let generationSchema = try GenerationSchema(root: root, dependencies: [])
+
+        let response = try await session.respond(to: prompt, schema: generationSchema)
+
         /*
-         Dynamic generation with arbitrary JSON Schema is only supported starting with
-         later Xcode beta seeds. The current SDK we are building against does *not*
-         expose a public `GenerationSchema(jsonSchema:)` initializer (or any other
-         runtime JSON Schema bridge). Instead of failing at compile-time, we gracefully
-         reject the call at runtime so that older toolchains can still build the
-         application. Once the required initializer ships, this guard can be removed
-         and the previously attempted implementation restored.
+         The FoundationModels SDK used for this build does not yet expose public APIs to
+         introspect a DynamicGenerationSchema at runtime, which would allow converting
+         the returned `GeneratedContent` into a Foundation container type. In early
+         previews of the framework there was a `kind` property but this was removed in
+         newer seeds, which currently breaks compilation.
+
+         As a temporary workaround we forward the textual representation of the
+         `GeneratedContent` back to JavaScript. This keeps the feature functional while
+         avoiding compile-time dependence on still-evolving APIs. Once the SDK exposes a
+         stable way to export `GeneratedContent` (for example via `jsonString` or
+         `Codable` conformance) the conversion logic can be revisited.
         */
 
-        throw NSError(
-            domain: "FoundationModelsPlugin",
-            code: -12,
-            userInfo: [NSLocalizedDescriptionKey: "Dynamic schemas via JSON string are not supported on this OS / Xcode version."]
-        )
+        return String(describing: response.content)
     }
 }
 #else
