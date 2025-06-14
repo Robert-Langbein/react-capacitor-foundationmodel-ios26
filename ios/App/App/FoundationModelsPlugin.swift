@@ -11,7 +11,9 @@ public class FoundationModelsPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "FoundationModelsPlugin"
     public let jsName = "FoundationModels"
     public let pluginMethods: [CAPPluginMethod] = [
-        CAPPluginMethod(name: "generateText", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "generateText", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "generateSummary", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "echo", returnType: CAPPluginReturnPromise)
     ]
 
     // MARK: - Public API exposed to JavaScript
@@ -39,12 +41,79 @@ public class FoundationModelsPlugin: CAPPlugin, CAPBridgedPlugin {
             }
         }
     }
+
+    // MARK: Guided Generation example – returns JSON with {"summary": String}
+    @objc func generateSummary(_ call: CAPPluginCall) {
+        guard let prompt = call.getString("prompt"), !prompt.isEmpty else {
+            call.reject("'prompt' must be provided")
+            return
+        }
+
+        Task {
+            guard #available(iOS 26, *), let provider = _LanguageModelSessionProvider.shared else {
+                call.reject("Foundation Models not available on this device.")
+                return
+            }
+
+            do {
+                let json = try await provider.generateSummaryJSON(prompt: prompt)
+                call.resolve(["json": json])
+            } catch {
+                call.reject(error.localizedDescription)
+            }
+        }
+    }
+
+    // MARK: Tool calling example – EchoTool
+    @objc func echo(_ call: CAPPluginCall) {
+        guard let message = call.getString("message") else {
+            call.reject("'message' missing")
+            return
+        }
+
+        Task {
+            guard #available(iOS 26, *), let provider = _LanguageModelSessionProvider.shared else {
+                call.reject("Foundation Models not available")
+                return
+            }
+
+            do {
+                let reply = try await provider.echo(message: message)
+                call.resolve(["reply": reply])
+            } catch {
+                call.reject(error.localizedDescription)
+            }
+        }
+    }
 }
 
 // MARK: - Session provider
 
 #if canImport(FoundationModels)
 import FoundationModels
+
+// Guided Generation struct
+@available(iOS 26, *)
+@Generable
+struct SummaryResult: Codable {
+    var summary: String
+}
+
+// Simple tool example
+@available(iOS 26, *)
+struct EchoTool: Tool {
+    let name = "echoTool"
+    let description = "Echo back the provided message"
+
+    @Generable
+    struct Arguments {
+        var message: String
+    }
+
+    func call(arguments: Arguments) async throws -> ToolOutput {
+        return ToolOutput("You said: \(arguments.message)")
+    }
+}
 
 @available(iOS 26, *)
 fileprivate final class _LanguageModelSessionProvider {
@@ -55,6 +124,21 @@ fileprivate final class _LanguageModelSessionProvider {
 
     func generateText(prompt: String, maxTokens: Int, temperature: Float) async throws -> String {
         let response = try await session.respond(to: prompt)
+        return response.content
+    }
+
+    func generateSummaryJSON(prompt: String) async throws -> String {
+        let response = try await session.respond(to: prompt, generating: SummaryResult.self)
+        let data = try JSONEncoder().encode(response.content)
+        return String(data: data, encoding: .utf8) ?? "{}"
+    }
+
+    // Example tool calling: we ask the model to decide whether to call echoTool
+    func echo(message: String) async throws -> String {
+        // Create a session with the EchoTool available
+        let toolSession = LanguageModelSession(tools: [EchoTool()])
+        let prompt = "Use the echoTool to repeat the following message: \"\(message)\""
+        let response = try await toolSession.respond(to: prompt)
         return response.content
     }
 }

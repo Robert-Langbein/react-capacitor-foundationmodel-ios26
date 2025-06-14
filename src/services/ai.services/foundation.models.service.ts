@@ -16,6 +16,12 @@ export interface FoundationModelsPlugin {
    * @param options generation parameters
    */
   generateText(options: GenerateTextOptions): Promise<GenerateTextResult>;
+
+  /** Guided generation – summary result as JSON string */
+  generateSummary(options: { prompt: string }): Promise<{ json: string }>;
+
+  /** Tool calling echo */
+  echo(options: { message: string }): Promise<{ reply: string }>;
 }
 
 /**
