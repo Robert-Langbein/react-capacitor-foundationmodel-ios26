@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import './styles.css';
 import { 
   foundationModels, 
@@ -20,6 +20,97 @@ interface StreamingState {
   streamId?: string;
 }
 
+// Reusable memoized components moved outside App to keep identity stable
+
+interface InputSectionProps {
+  prompt: string;
+  instructions: string;
+  showInstructions: boolean;
+  onPromptChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  onInstructionsChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
+}
+
+export const InputSection: React.FC<InputSectionProps> = React.memo(
+  ({ prompt, instructions, showInstructions, onPromptChange, onInstructionsChange }) => (
+    <div className="glass-effect rounded-2xl p-6 mb-6">
+      <h3 className="text-xl font-bold text-white mb-4 text-shadow-luxury">Input</h3>
+      <div className="space-y-4">
+        <div>
+          <label className="block text-white/80 text-sm font-medium mb-2">Prompt</label>
+          <textarea
+            value={prompt}
+            onChange={onPromptChange}
+            placeholder="Enter your prompt here..."
+            className="w-full h-24 bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none backdrop-blur-sm"
+          />
+        </div>
+        {showInstructions && (
+          <div>
+            <label className="block text-white/80 text-sm font-medium mb-2">Instructions (Optional)</label>
+            <textarea
+              value={instructions}
+              onChange={onInstructionsChange}
+              placeholder="Additional instructions..."
+              className="w-full h-20 bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none backdrop-blur-sm"
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  )
+);
+
+interface FeatureCardProps {
+  title: string;
+  icon: string;
+  description: string;
+  onClick: () => void;
+  loading: boolean;
+  result?: any;
+  disabled?: boolean;
+}
+
+export const FeatureCard: React.FC<FeatureCardProps> = React.memo(
+  ({ title, icon, description, onClick, loading, result, disabled }) => {
+    return (
+      <div className="glass-effect rounded-2xl p-6 hover:shadow-floating transition-all duration-300">
+        <div className="flex items-center gap-3 mb-4">
+          <span className="text-2xl">{icon}</span>
+          <h3 className="text-lg font-bold text-white text-shadow-luxury">{title}</h3>
+        </div>
+        <p className="text-white/70 text-sm mb-4">{description}</p>
+        <button
+          onClick={onClick}
+          disabled={loading || disabled}
+          className={`w-full py-3 px-4 rounded-xl font-semibold transition-all duration-300 ${
+            disabled
+              ? 'bg-gray-500/50 text-gray-300 cursor-not-allowed'
+              : loading
+              ? 'luxury-gradient text-white animate-pulse'
+              : 'luxury-gradient text-white hover:shadow-floating hover:scale-105 active:scale-95'
+          }`}
+        >
+          {loading ? 'Processing...' : 'Generate'}
+        </button>
+        {result && (
+          <div className="mt-4 p-4 bg-black/20 rounded-xl border border-white/10">
+            <h4 className="text-white font-medium mb-2">Result:</h4>
+            <div className="text-white/80 text-sm">
+              {typeof result === 'string' ? (
+                <p className="whitespace-pre-wrap">{result}</p>
+              ) : (
+                <pre className="overflow-x-auto text-xs">{JSON.stringify(result, null, 2)}</pre>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+);
+
+
+
 const App: React.FC = () => {
   // State management
   const [availability, setAvailability] = useState<AvailabilityResult | null>(null);
@@ -39,6 +130,7 @@ const App: React.FC = () => {
     isStreaming: false,
     content: ''
   });
+  const [currentSchema, setCurrentSchema] = useState<any>(null);
   
   // Conversation states
   const [conversationSession, setConversationSession] = useState<ConversationSession | null>(null);
@@ -164,8 +256,9 @@ const App: React.FC = () => {
     foundationModels.echo(prompt)
   );
 
-  const handleGenerateWithSchema = () => handleFeature('schema', 'Schema Generation', () => {
-    const schema = {
+  // Initialize schema on component mount
+  useEffect(() => {
+    const defaultSchema = {
       type: "object",
       properties: {
         title: { type: "string" },
@@ -174,8 +267,23 @@ const App: React.FC = () => {
         confidence: { type: "number" }
       }
     };
-    return foundationModels.generateWithSchema(prompt, schema);
-  });
+    setCurrentSchema(defaultSchema);
+  }, []);
+
+  const handleGenerateWithSchema = () => {
+    const schema = currentSchema || {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        content: { type: "string" },
+        tags: { type: "array", items: { type: "string" } },
+        confidence: { type: "number" }
+      }
+    };
+    return handleFeature('schema', 'Schema Generation', () =>
+      foundationModels.generateWithSchema(prompt, schema)
+    );
+  };
 
   const handleGenerateWithInstructions = () => {
     if (!instructions.trim()) {
@@ -367,7 +475,7 @@ const App: React.FC = () => {
     const config = statusConfig[availability.status];
 
     return (
-      <div className="glass-effect rounded-2xl p-4 mb-6 animate-slide-up">
+      <div className="glass-effect rounded-2xl p-4 mb-6">
         <div className="flex items-center gap-3">
           <div className={`w-3 h-3 rounded-full ${config.color} animate-pulse`}></div>
           <div className="flex-1">
@@ -395,7 +503,7 @@ const App: React.FC = () => {
     const config = errorConfig[error.type];
 
     return (
-      <div className={`glass-effect bg-gradient-to-r ${config.bg} border ${config.border} rounded-2xl p-4 mb-6 animate-slide-up`}>
+      <div className={`glass-effect bg-gradient-to-r ${config.bg} border ${config.border} rounded-2xl p-4 mb-6`}>
         <div className="flex items-start gap-3">
           <span className="text-xl">{config.icon}</span>
           <div className="flex-1">
@@ -443,88 +551,24 @@ const App: React.FC = () => {
     );
   };
 
-  // Input section component
-  const InputSection = () => (
-    <div className="glass-effect rounded-2xl p-6 mb-6 animate-slide-up">
-      <h3 className="text-xl font-bold text-white mb-4 text-shadow-luxury">Input</h3>
-      <div className="space-y-4">
-        <div>
-          <label className="block text-white/80 text-sm font-medium mb-2">Prompt</label>
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Enter your prompt here..."
-            className="w-full h-24 bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none backdrop-blur-sm"
-          />
-        </div>
-        {activeView === 'features' && (
-          <div>
-            <label className="block text-white/80 text-sm font-medium mb-2">Instructions (Optional)</label>
-            <textarea
-              value={instructions}
-              onChange={(e) => setInstructions(e.target.value)}
-              placeholder="Additional instructions..."
-              className="w-full h-20 bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none backdrop-blur-sm"
-            />
-          </div>
-        )}
-      </div>
-    </div>
-  );
+  // Memoized event handlers to prevent unnecessary re-renders
+  const handlePromptChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setPrompt(e.target.value);
+  }, []);
 
-  // Feature card component
-  const FeatureCard = ({ 
-    title, 
-    icon, 
-    description, 
-    onClick, 
-    loading: isLoading, 
-    result, 
-    disabled 
-  }: {
-    title: string;
-    icon: string;
-    description: string;
-    onClick: () => void;
-    loading: boolean;
-    result?: any;
-    disabled?: boolean;
-  }) => (
-    <div className="glass-effect rounded-2xl p-6 animate-slide-up hover:shadow-floating transition-all duration-300">
-      <div className="flex items-center gap-3 mb-4">
-        <span className="text-2xl">{icon}</span>
-        <h3 className="text-lg font-bold text-white text-shadow-luxury">{title}</h3>
-      </div>
-      <p className="text-white/70 text-sm mb-4">{description}</p>
-      <button
-        onClick={onClick}
-        disabled={isLoading || disabled}
-        className={`w-full py-3 px-4 rounded-xl font-semibold transition-all duration-300 ${
-          disabled
-            ? 'bg-gray-500/50 text-gray-300 cursor-not-allowed'
-            : isLoading
-            ? 'luxury-gradient text-white animate-pulse'
-            : 'luxury-gradient text-white hover:shadow-floating hover:scale-105 active:scale-95'
-        }`}
-      >
-        {isLoading ? 'Processing...' : 'Generate'}
-      </button>
-      {result && (
-        <div className="mt-4 p-4 bg-black/20 rounded-xl border border-white/10">
-          <h4 className="text-white font-medium mb-2">Result:</h4>
-          <div className="text-white/80 text-sm">
-            {typeof result === 'string' ? (
-              <p className="whitespace-pre-wrap">{result}</p>
-            ) : (
-              <pre className="overflow-x-auto text-xs">{JSON.stringify(result, null, 2)}</pre>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
+  const handleInstructionsChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInstructions(e.target.value);
+  }, []);
 
-  // Features view
+  const handleTemperatureChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setTemperature(parseFloat(e.target.value));
+  }, []);
+
+  const handleMaxTokensChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setMaxTokens(parseInt(e.target.value));
+  }, []);
+
+    // Features view
   const FeaturesView = () => {
     const features = [
       {
@@ -571,6 +615,8 @@ const App: React.FC = () => {
       }
     ];
 
+
+
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {features.map((feature) => (
@@ -588,7 +634,7 @@ const App: React.FC = () => {
         
         {/* Special streaming card */}
         {streamingState.content && (
-          <div className="md:col-span-2 lg:col-span-3 glass-effect rounded-2xl p-6 animate-slide-up">
+          <div className="md:col-span-2 lg:col-span-3 glass-effect rounded-2xl p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-white text-shadow-luxury">🌊 Live Stream</h3>
               {streamingState.isStreaming && (
@@ -613,15 +659,34 @@ const App: React.FC = () => {
             </div>
           </div>
         )}
+
+        {/* Schema display card - always visible */}
+        <div className="md:col-span-2 lg:col-span-3 glass-effect rounded-2xl p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold text-white text-shadow-luxury">🏗️ Structured Output Schema</h3>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-white/60 bg-white/10 px-2 py-1 rounded">Active</span>
+            </div>
+          </div>
+          <div className="p-4 bg-black/20 rounded-xl border border-white/10">
+            <pre className="text-white/90 text-sm overflow-x-auto">
+              {JSON.stringify(currentSchema, null, 2)}
+            </pre>
+          </div>
+          <div className="mt-3 text-white/60 text-xs">
+            This schema defines the structure for generated output. The AI will return data matching this format.
+          </div>
+        </div>
       </div>
     );
   };
 
   // Conversation view
-  const ConversationView = () => (
-    <div className="space-y-6">
-      {!conversationSession ? (
-        <div className="glass-effect rounded-2xl p-8 text-center animate-slide-up">
+  const ConversationView = () => {
+  return (
+      <div className="space-y-6">
+        {!conversationSession ? (
+          <div className="glass-effect rounded-2xl p-8 text-center">
           <div className="text-6xl mb-4">💬</div>
           <h3 className="text-2xl font-bold text-white mb-4 text-shadow-luxury">Start a Conversation</h3>
           <p className="text-white/70 mb-6">Begin a multi-turn conversation with Apple Intelligence</p>
@@ -640,7 +705,7 @@ const App: React.FC = () => {
       ) : (
         <>
           {/* Session info */}
-          <div className="glass-effect rounded-2xl p-4 animate-slide-up">
+          <div className="glass-effect rounded-2xl p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
@@ -659,7 +724,7 @@ const App: React.FC = () => {
           </div>
 
           {/* Message input */}
-          <div className="glass-effect rounded-2xl p-4 animate-slide-up">
+          <div className="glass-effect rounded-2xl p-4">
             <button
               onClick={sendMessage}
               disabled={loading.message || !prompt.trim()}
@@ -675,7 +740,7 @@ const App: React.FC = () => {
 
           {/* Conversation history */}
           {conversationHistory.length > 0 && (
-            <div className="glass-effect rounded-2xl p-6 animate-slide-up">
+            <div className="glass-effect rounded-2xl p-6">
               <h3 className="text-lg font-bold text-white mb-4 text-shadow-luxury">Conversation</h3>
               <div className="space-y-4 max-h-96 overflow-y-auto">
                 {conversationHistory.map((message, index) => (
@@ -708,12 +773,14 @@ const App: React.FC = () => {
         </>
       )}
     </div>
-  );
+    );
+  };
 
   // Settings view
-  const SettingsView = () => (
-    <div className="space-y-6">
-      <div className="glass-effect rounded-2xl p-6 animate-slide-up">
+  const SettingsView = () => {
+    return (
+      <div className="space-y-6">
+        <div className="glass-effect rounded-2xl p-6">
         <h3 className="text-xl font-bold text-white mb-6 text-shadow-luxury">AI Parameters</h3>
         <div className="space-y-6">
           <div>
@@ -726,7 +793,7 @@ const App: React.FC = () => {
               max="1"
               step="0.1"
               value={temperature}
-              onChange={(e) => setTemperature(parseFloat(e.target.value))}
+              onChange={handleTemperatureChange}
               className="w-full h-2 bg-white/20 rounded-lg appearance-none cursor-pointer slider"
             />
             <div className="flex justify-between text-xs text-white/60 mt-1">
@@ -735,7 +802,7 @@ const App: React.FC = () => {
             </div>
           </div>
           
-          <div>
+      <div>
             <label className="block text-white/80 text-sm font-medium mb-3">
               Max Tokens: {maxTokens}
             </label>
@@ -745,7 +812,7 @@ const App: React.FC = () => {
               max="2000"
               step="100"
               value={maxTokens}
-              onChange={(e) => setMaxTokens(parseInt(e.target.value))}
+              onChange={handleMaxTokensChange}
               className="w-full h-2 bg-white/20 rounded-lg appearance-none cursor-pointer slider"
             />
             <div className="flex justify-between text-xs text-white/60 mt-1">
@@ -756,7 +823,7 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      <div className="glass-effect rounded-2xl p-6 animate-slide-up">
+      <div className="glass-effect rounded-2xl p-6">
         <h3 className="text-xl font-bold text-white mb-4 text-shadow-luxury">System Status</h3>
         <div className="space-y-4">
           <div className="flex justify-between items-center">
@@ -776,23 +843,22 @@ const App: React.FC = () => {
             className="w-full py-3 px-4 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-colors border border-white/20"
           >
             Refresh Status
-          </button>
+        </button>
         </div>
       </div>
     </div>
-  );
+    );
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-4 font-body">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-4 font-body py-[80px]">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <header className="text-center mb-8 animate-fade-in">
           <div className="inline-flex items-center gap-3 mb-4">
-            <div className="w-12 h-12 luxury-gradient rounded-2xl flex items-center justify-center animate-float">
-              <span className="text-2xl">🤖</span>
-            </div>
+
             <h1 className="text-4xl md:text-5xl font-bold text-white text-shadow-luxury font-display">
-              Foundation Models
+              Foundation Model
             </h1>
           </div>
           <p className="text-white/70 text-lg">
@@ -808,7 +874,13 @@ const App: React.FC = () => {
         <Navigation />
 
         {/* Input Section */}
-        <InputSection />
+        <InputSection
+          prompt={prompt}
+          instructions={instructions}
+          showInstructions={activeView === 'features'}
+          onPromptChange={handlePromptChange}
+          onInstructionsChange={handleInstructionsChange}
+        />
 
         {/* Main Content */}
         <main>
