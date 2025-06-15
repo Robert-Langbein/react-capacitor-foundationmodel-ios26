@@ -50,6 +50,13 @@ export interface FoundationModelsPlugin {
   // Event listeners
   addListener(eventName: 'streamingUpdate', listenerFunc: (data: StreamingChunk) => void): Promise<PluginListenerHandle>;
   removeAllListeners(): Promise<void>;
+
+  // New method for getting session info
+  getSessionInfo(options: { sessionId: string }): Promise<SessionInfo>;
+
+  // Dynamic tool registration
+  registerTool(options: { toolId: string; name: string; description: string }): Promise<{ success: boolean }>;
+  sendToolResult(options: { callId: string; output: string }): Promise<{ success: boolean }>;
 }
 
 export interface AvailabilityResult {
@@ -74,6 +81,12 @@ export interface StreamingChunk {
 export interface ConversationSession {
   sessionId: string;
   isActive: boolean;
+  messageCount: number;
+}
+
+export interface SessionInfo {
+  sessionId: string;
+  isResponding: boolean;
   messageCount: number;
 }
 
@@ -429,6 +442,46 @@ export class FoundationModelsService {
     // Clear streaming listeners
     this.streamingListeners.clear();
   }
+
+  // MARK: - New method for getting session info
+  async getSessionInfo(options: { sessionId: string }): Promise<SessionInfo> {
+    await this.ensureAvailable();
+
+    try {
+      return await FoundationModels.getSessionInfo(options);
+    } catch (error) {
+      throw new FoundationModelsError(
+        'Failed to get session info',
+        'SESSION_INFO_FAILED',
+        error as Error
+      );
+    }
+  }
+
+  // MARK: - Dynamic tool registration
+  async registerTool(options: { toolId: string; name: string; description: string }): Promise<{ success: boolean }> {
+    try {
+      return await FoundationModels.registerTool(options);
+    } catch (error) {
+      throw new FoundationModelsError(
+        'Failed to register tool',
+        'TOOL_REGISTRATION_FAILED',
+        error as Error
+      );
+    }
+  }
+
+  async sendToolResult(options: { callId: string; output: string }): Promise<{ success: boolean }> {
+    try {
+      return await FoundationModels.sendToolResult(options);
+    } catch (error) {
+      throw new FoundationModelsError(
+        'Failed to send tool result',
+        'TOOL_RESULT_SEND_FAILED',
+        error as Error
+      );
+    }
+  }
 }
 
 // MARK: - Convenience functions
@@ -468,4 +521,39 @@ export const isSupported = () =>
 export const prewarmSession = () => 
   foundationModels.prewarmSession();
 
-export default foundationModels; 
+export const getSessionInfo = (sessionId: string) => 
+  FoundationModels.getSessionInfo({ sessionId });
+
+export const registerTool = async (
+  name: string,
+  description: string,
+  handler: (payload: string) => Promise<string> | string
+): Promise<string> => {
+  const toolId = `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  jsToolHandlers.set(toolId, handler);
+  await foundationModels.registerTool({ toolId, name, description });
+  return toolId;
+};
+
+export const removeAllListeners = () => FoundationModels.removeAllListeners();
+
+export default foundationModels;
+
+// --- Tool Call Bridge (JS side) ---
+const jsToolHandlers: Map<string, (payload: string) => Promise<string> | string> = new Map();
+
+// @ts-ignore – toolCall listener is custom event from native side
++(FoundationModels as any).addListener?.('toolCall', async (data: any) => {
+  const { toolId, callId, payload } = data as { toolId: string; callId: string; payload: string };
+  const handler = jsToolHandlers.get(toolId);
+  if (!handler) {
+    await FoundationModels.sendToolResult({ callId, output: '' });
+    return;
+  }
+  try {
+    const res = await handler(payload);
+    await FoundationModels.sendToolResult({ callId, output: typeof res === 'string' ? res : JSON.stringify(res) });
+  } catch (err: any) {
+    await FoundationModels.sendToolResult({ callId, output: `Error: ${err?.message ?? String(err)}` });
+  }
+}); 

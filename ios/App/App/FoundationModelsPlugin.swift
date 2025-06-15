@@ -21,7 +21,10 @@ public class FoundationModelsPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "continueConversation", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "prewarmSession", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "checkAvailability", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "generateWithOptions", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "generateWithOptions", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getSessionInfo", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "registerTool", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "sendToolResult", returnType: CAPPluginReturnPromise)
     ]
 
     // MARK: - Basic text generation
@@ -154,7 +157,6 @@ public class FoundationModelsPlugin: CAPPlugin, CAPBridgedPlugin {
 
             do {
                 let streamId = try await provider.generateStreaming(prompt: prompt) { [weak self] chunk, callId in
-                    // Send streaming updates back to JavaScript using the provided callId
                     self?.notifyListeners("streamingUpdate", data: [
                         "chunk": chunk,
                         "callId": callId
@@ -273,6 +275,69 @@ public class FoundationModelsPlugin: CAPPlugin, CAPBridgedPlugin {
             }
         }
     }
+
+    // MARK: - Session information
+    @objc func getSessionInfo(_ call: CAPPluginCall) {
+        guard let sessionId = call.getString("sessionId") else {
+            call.reject("'sessionId' required")
+            return
+        }
+
+        Task {
+            guard #available(iOS 26, *), let provider = _LanguageModelSessionProvider.shared else {
+                call.reject("Foundation Models not available")
+                return
+            }
+
+            do {
+                let info = try await provider.getSessionInfo(sessionId: sessionId)
+                call.resolve(info)
+            } catch {
+                call.reject("Could not fetch session info: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    // MARK: - Tool registration from JS
+    @objc func registerTool(_ call: CAPPluginCall) {
+        guard let toolId = call.getString("toolId"),
+              let name = call.getString("name"),
+              let description = call.getString("description") else {
+            call.reject("'toolId', 'name' und 'description' erforderlich")
+            return
+        }
+
+        Task {
+            guard #available(iOS 26, *), let provider = _LanguageModelSessionProvider.shared else {
+                call.reject("Foundation Models not available")
+                return
+            }
+
+            do {
+                try await provider.registerTool(toolId: toolId, name: name, description: description, plugin: self)
+                call.resolve(["success": true])
+            } catch {
+                call.reject("Tool registration failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    // Result callback from JS after tool execution
+    @objc func sendToolResult(_ call: CAPPluginCall) {
+        guard let callId = call.getString("callId"),
+              let output = call.getString("output") else {
+            call.reject("'callId' und 'output' erforderlich")
+            return
+        }
+
+        guard #available(iOS 26, *), let provider = _LanguageModelSessionProvider.shared else {
+            call.reject("Foundation Models not available")
+            return
+        }
+
+        provider.resolveToolCall(callId: callId, output: output)
+        call.resolve(["success": true])
+    }
 }
 
 // MARK: - Session provider implementation
@@ -295,6 +360,12 @@ struct DetailedResponse: Codable {
     var confidence: Double
 }
 
+@available(iOS 26, *)
+@Generable
+struct StreamingText: Codable {
+    var text: String
+}
+
 // Tool implementations
 @available(iOS 26, *)
 struct EchoTool: Tool {
@@ -314,25 +385,85 @@ struct EchoTool: Tool {
 }
 
 @available(iOS 26, *)
+final class JSToolBridge: Tool {
+    @Generable struct JSToolArgs: Codable {
+        var payload: String
+    }
+
+    typealias Arguments = JSToolArgs
+
+    let toolId: String
+    let name: String
+    let description: String
+    weak var plugin: FoundationModelsPlugin?
+
+    // Continuations Map (shared via provider)
+    var continuations: () -> [String: CheckedContinuation<ToolOutput, Error>]
+    var storeContinuation: (String, CheckedContinuation<ToolOutput, Error>) -> Void
+
+    init(toolId: String, name: String, description: String, plugin: FoundationModelsPlugin?,
+         getCont: @escaping () -> [String: CheckedContinuation<ToolOutput, Error>],
+         storeCont: @escaping (String, CheckedContinuation<ToolOutput, Error>) -> Void) {
+        self.toolId = toolId
+        self.name = name
+        self.description = description
+        self.plugin = plugin
+        self.continuations = getCont
+        self.storeContinuation = storeCont
+    }
+
+    func call(arguments: JSToolArgs) async throws -> ToolOutput {
+        guard let plugin = plugin else {
+            throw NSError(domain: "FoundationModelsPlugin", code: -30, userInfo: [NSLocalizedDescriptionKey: "Plugin deallocated"])
+        }
+
+        let callId = UUID().uuidString
+
+        return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<ToolOutput, Error>) in
+            // Save continuation so that JS can resolve later
+            storeContinuation(callId, cont)
+
+            // Notify JS
+            plugin.notifyListeners("toolCall", data: [
+                "toolId": toolId,
+                "callId": callId,
+                "payload": arguments.payload
+            ])
+        }
+    }
+}
+
+@available(iOS 26, *)
 fileprivate final class _LanguageModelSessionProvider {
     static let shared: _LanguageModelSessionProvider? = _LanguageModelSessionProvider()
     
     private var sessions: [String: LanguageModelSession] = [:]
     private var streamingSessions: [String: Task<Void, Never>] = [:]
+    private var registeredTools: [String: JSToolBridge] = [:]
+    private var pendingToolContinuations: [String: CheckedContinuation<ToolOutput, Error>] = [:]
     private let sessionQueue = DispatchQueue(label: "foundation.models.sessions", attributes: .concurrent)
+
+    // Helper to create a session that includes all currently registered JS tools
+    private func makeSession() -> LanguageModelSession {
+        if registeredTools.isEmpty {
+            return LanguageModelSession()
+        } else {
+            return LanguageModelSession(tools: Array(registeredTools.values))
+        }
+    }
 
     private init() {}
 
     // MARK: - Basic text generation
     func generateText(prompt: String, maxTokens: Int, temperature: Float) async throws -> String {
-        let session = LanguageModelSession()
+        let session = makeSession()
         let response = try await session.respond(to: prompt)
         return response.content
     }
 
     // MARK: - Guided generation
     func generateSummaryJSON(prompt: String) async throws -> String {
-        let session = LanguageModelSession()
+        let session = makeSession()
         let response = try await session.respond(to: prompt, generating: SummaryResult.self)
         let data = try JSONEncoder().encode(response.content)
         return String(data: data, encoding: .utf8) ?? "{}"
@@ -340,7 +471,10 @@ fileprivate final class _LanguageModelSessionProvider {
 
     // MARK: - Tool calling
     func echo(message: String) async throws -> String {
-        let toolSession = LanguageModelSession(tools: [EchoTool()])
+        let dynamicTools: [any Tool] = Array(registeredTools.values)
+        var allTools: [any Tool] = dynamicTools
+        allTools.append(EchoTool())
+        let toolSession = LanguageModelSession(tools: allTools)
         let prompt = "Use the echoTool to process this message: \"\(message)\""
         let response = try await toolSession.respond(to: prompt)
         return response.content
@@ -390,7 +524,7 @@ fileprivate final class _LanguageModelSessionProvider {
         let root = DynamicGenerationSchema(name: "Root", properties: propertySchemas)
         let generationSchema = try GenerationSchema(root: root, dependencies: [])
 
-        let session = LanguageModelSession()
+        let session = makeSession()
         let response = try await session.respond(to: prompt, schema: generationSchema)
 
         return String(describing: response.content)
@@ -399,55 +533,52 @@ fileprivate final class _LanguageModelSessionProvider {
     // MARK: - Instructions-based generation
     func generateWithInstructions(prompt: String, instructions: String) async throws -> String {
         let instructionsObj = Instructions(instructions)
-        let session = LanguageModelSession(instructions: instructionsObj)
+        let session = makeSession()
         let response = try await session.respond(to: prompt)
         return response.content
     }
 
     // MARK: - Streaming generation
     func generateStreaming(prompt: String, onChunk: @escaping (String, String) -> Void) async throws -> String {
-        let session = LanguageModelSession()
+        let session = makeSession()
         let streamId = UUID().uuidString
-        
+
+        // Create a task that listens to the async snapshot sequence
         let task = Task {
+            var lastText = ""
             do {
-                // Generate response normally first
-                let response = try await session.respond(to: prompt)
-                let fullContent = response.content
-                
-                // Simulate streaming by sending chunks with realistic timing
-                let words = fullContent.components(separatedBy: " ")
-                var currentChunk = ""
-                
-                for (index, word) in words.enumerated() {
-                    currentChunk += word
-                    
-                    // Send chunk every 2-3 words or at the end
-                    if index % 2 == 1 || index == words.count - 1 {
-                        onChunk(currentChunk + " ", streamId)
-                        currentChunk = ""
-                        
-                        // Realistic delay between chunks (50-150ms)
-                        let delay = UInt64.random(in: 50_000_000...150_000_000)
-                        try await Task.sleep(nanoseconds: delay)
+                let stream = session.streamResponse(
+                    to: prompt,
+                    generating: StreamingText.self
+                )
+
+                for try await partial in stream {
+                    guard let current = partial.text else { continue }
+
+                    // Calculate diff to send only new part
+                    if current.hasPrefix(lastText) {
+                        let startIndex = current.index(current.startIndex, offsetBy: lastText.count)
+                        let chunk = String(current[startIndex...])
+                        if !chunk.isEmpty {
+                            onChunk(chunk, streamId)
+                        }
                     } else {
-                        currentChunk += " "
+                        // Fallback: send full text
+                        onChunk(current, streamId)
                     }
+                    lastText = current
                 }
-                
-                // Send final completion signal
+
                 onChunk("[STREAM_COMPLETE]", streamId)
-                
             } catch {
-                onChunk("Error: \(error.localizedDescription)", streamId)
                 onChunk("[STREAM_ERROR]", streamId)
             }
         }
-        
+
         await sessionQueue.async(flags: .barrier) {
             self.streamingSessions[streamId] = task
         }
-        
+
         return streamId
     }
 
@@ -460,7 +591,7 @@ fileprivate final class _LanguageModelSessionProvider {
             let instructionsObj = Instructions(instructions)
             session = LanguageModelSession(instructions: instructionsObj)
         } else {
-            session = LanguageModelSession()
+            session = makeSession()
         }
         
         await sessionQueue.async(flags: .barrier) {
@@ -481,7 +612,7 @@ fileprivate final class _LanguageModelSessionProvider {
 
     // MARK: - Prewarming
     func prewarmSession() async throws {
-        let session = LanguageModelSession()
+        let session = makeSession()
         try await session.prewarm()
     }
 
@@ -493,7 +624,7 @@ fileprivate final class _LanguageModelSessionProvider {
         includeSchemaInPrompt: Bool,
         safetyLevel: String
     ) async throws -> String {
-        let session = LanguageModelSession()
+        let session = makeSession()
         
         // Create generation options based on parameters
         var options = GenerationOptions()
@@ -541,6 +672,39 @@ fileprivate final class _LanguageModelSessionProvider {
                 "reason": "Foundation Models unavailable"
             ]
         }
+    }
+
+    // MARK: - Session information
+    func getSessionInfo(sessionId: String) async throws -> [String: Any] {
+        guard let session = await sessionQueue.sync(execute: { sessions[sessionId] }) else {
+            throw NSError(domain: "FoundationModelsPlugin", code: -17, userInfo: [NSLocalizedDescriptionKey: "Session not found"])
+        }
+
+        let info: [String: Any] = [
+            "sessionId": sessionId,
+            "isResponding": session.isResponding
+        ]
+
+        return info
+    }
+
+    // MARK: - Dynamic Tool registration
+    func registerTool(toolId: String, name: String, description: String, plugin: FoundationModelsPlugin) async throws {
+        guard registeredTools[toolId] == nil else { return }
+        let bridge = JSToolBridge(toolId: toolId, name: name, description: description, plugin: plugin, getCont: { [weak self] in
+            self?.pendingToolContinuations ?? [:]
+        }, storeCont: { [weak self] id, cont in
+            self?.pendingToolContinuations[id] = cont
+        })
+        await sessionQueue.async(flags: .barrier) {
+            self.registeredTools[toolId] = bridge
+        }
+    }
+
+    func resolveToolCall(callId: String, output: String) {
+        guard let cont = pendingToolContinuations[callId] else { return }
+        cont.resume(returning: ToolOutput(output))
+        pendingToolContinuations.removeValue(forKey: callId)
     }
 }
 #else
