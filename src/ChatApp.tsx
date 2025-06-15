@@ -271,8 +271,8 @@ const ChatApp: React.FC = () => {
               if (registeredTools.length === 0) {
                 throw new Error('No tools selected. Please select tools in the settings.');
               }
-              const toolMsg = `${userMessage.content}\n\nAvailable tools: ${registeredTools.join(', ')}.`;
-              fullResponse = await foundationModels.generateText(toolMsg, {
+              // Pass user prompt directly; Foundation Models will decide when to invoke tools
+              fullResponse = await foundationModels.generateText(userMessage.content, {
                 temperature: settings.temperature,
                 maxTokens: settings.maxTokens
               });
@@ -280,8 +280,16 @@ const ChatApp: React.FC = () => {
               break;
             }
             case 'summary': {
-              const sum = await foundationModels.generateSummary(userMessage.content);
-              fullResponse = JSON.stringify(sum, null, 2);
+              try {
+                const sum = await foundationModels.generateSummary(userMessage.content);
+                fullResponse = JSON.stringify(sum, null, 2);
+              } catch (err) {
+                // Fallback to instruction-based summary if built-in summary fails
+                fullResponse = await foundationModels.generateWithInstructions(
+                  `Please provide a concise summary of the following text:\n\n${userMessage.content}`,
+                  ''
+                );
+              }
               streamMetadata = { summary: true };
               break;
             }
@@ -382,18 +390,15 @@ const ChatApp: React.FC = () => {
           if (registeredTools.length === 0) {
             throw new Error('No tools selected. Please select tools in the settings.');
           }
-          // For tool calling, we use basic generation but mention available tools
-          const toolMessage = `${userMessage.content}\n\nAvailable tools: ${registeredTools.join(', ')}. You can use these tools to perform specific tasks.`;
-          
           if (settings.enableInstructions && instructions.trim()) {
             response = await foundationModels.generateWithInstructions(
-              toolMessage,
+              userMessage.content,
               instructions
             );
             metadata = { tools: registeredTools, instructions };
           } else {
             response = await foundationModels.generateText(
-              toolMessage,
+              userMessage.content,
               {
                 temperature: settings.temperature,
                 maxTokens: settings.maxTokens

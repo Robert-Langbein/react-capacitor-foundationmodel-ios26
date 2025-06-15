@@ -537,6 +537,16 @@ export const registerTool = async (
 
 export const removeAllListeners = () => FoundationModels.removeAllListeners();
 
+export const registerCustomTool = async (
+  toolId: string,
+  name: string,
+  description: string,
+  handler: (payload: string) => Promise<string> | string
+): Promise<void> => {
+  jsToolHandlers.set(toolId, handler);
+  await foundationModels.registerTool({ toolId, name, description });
+};
+
 export default foundationModels;
 
 // --- Tool Call Bridge (JS side) ---

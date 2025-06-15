@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faClock, faCalculator, faLightbulb, faCheck } from '@fortawesome/free-solid-svg-icons';
-import { foundationModels } from '../services/foundation.models.service';
+import { registerCustomTool } from '../services/foundation.models.service';
 
 interface Tool {
   id: string;
@@ -114,11 +114,7 @@ const ToolManager: React.FC<ToolManagerProps> = ({
         const tool = availableTools.find(t => t.id === toolId);
         if (tool) {
           // Register the tool in Foundation Models Service
-          await foundationModels.registerTool({
-            toolId: tool.id,
-            name: tool.name,
-            description: tool.description
-          });
+          await registerCustomTool(tool.id, tool.name, tool.description, tool.handler);
           
           newRegisteredTools.push(tool.id);
         }
@@ -140,20 +136,6 @@ const ToolManager: React.FC<ToolManagerProps> = ({
     
     onToolSelectionChange(newSelection);
   };
-
-//   const executeToolLocally = async (toolId: string, input: string = ''): Promise<string> => {
-//     const tool = availableTools.find(t => t.id === toolId);
-//     if (!tool) {
-//       return 'Tool not found.';
-//     }
-    
-//     try {
-//       const result = await tool.handler(input);
-//       return result;
-//     } catch (error) {
-//       return `Error executing tool: ${error instanceof Error ? error.message : 'Unknown error'}`;
-//     }
-//   };
 
   return (
     <div className="space-y-3">
@@ -217,21 +199,6 @@ const ToolManager: React.FC<ToolManagerProps> = ({
       )}
     </div>
   );
-};
-
-// Export the tool execution function for use in ChatApp
-export const executeToolById = async (toolId: string, input: string = ''): Promise<string> => {
-  const tool = availableTools.find(t => t.id === toolId);
-  if (!tool) {
-    return 'Tool not found.';
-  }
-  
-  try {
-    const result = await tool.handler(input);
-    return result;
-  } catch (error) {
-    return `Error executing tool: ${error instanceof Error ? error.message : 'Unknown error'}`;
-  }
 };
 
 export default ToolManager; 
