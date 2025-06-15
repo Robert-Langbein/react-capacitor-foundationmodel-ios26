@@ -174,16 +174,16 @@ const ToolManager: React.FC<ToolManagerProps> = ({
               </div>
               
               <div className="flex items-center space-x-2">
-                {isRegistered && (
-                  <FontAwesomeIcon icon={faCheck} className="text-green-400 text-xs" />
-                )}
                 <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${
                   isSelected 
                     ? 'bg-purple-500 border-purple-500' 
                     : 'border-white/30'
                 }`}>
-                  {isSelected && (
+                  {isSelected && isRegistered && (
                     <FontAwesomeIcon icon={faCheck} className="text-white text-xs" />
+                  )}
+                  {isSelected && !isRegistered && (
+                    <FontAwesomeIcon icon={faCheck} className="text-white/60 text-xs" />
                   )}
                 </div>
               </div>

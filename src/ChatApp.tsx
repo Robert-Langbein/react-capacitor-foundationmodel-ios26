@@ -137,6 +137,8 @@ const ChatApp: React.FC = () => {
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const settingsPanelRef = useRef<HTMLDivElement>(null);
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
 
   // Initialize
   useEffect(() => {
@@ -153,6 +155,24 @@ const ChatApp: React.FC = () => {
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  // Click outside to close settings
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showSettings && 
+          settingsPanelRef.current && 
+          !settingsPanelRef.current.contains(event.target as Node) &&
+          settingsButtonRef.current &&
+          !settingsButtonRef.current.contains(event.target as Node)) {
+        setShowSettings(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showSettings]);
 
   const checkAvailability = async () => {
     try {
@@ -615,6 +635,7 @@ const ChatApp: React.FC = () => {
                 </div>
               )}
               <Button
+                ref={settingsButtonRef}
                 variant="ghost"
                 size="icon"
                 onClick={() => setShowSettings(!showSettings)}
@@ -630,6 +651,7 @@ const ChatApp: React.FC = () => {
         <AnimatePresence>
           {showSettings && (
             <motion.div
+              ref={settingsPanelRef}
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
